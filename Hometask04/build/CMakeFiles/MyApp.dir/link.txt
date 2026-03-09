@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/MyApp.dir/sources/main.cpp.o CMakeFiles/MyApp.dir/sources/app_settings.cpp.o CMakeFiles/MyApp.dir/sources/menu.cpp.o CMakeFiles/MyApp.dir/sources/connection_test.cpp.o CMakeFiles/MyApp.dir/sources/resource_test.cpp.o -o MyApp 
