@@ -1,0 +1,6 @@
+mkdir build
+cd build
+cmake ..
+make 
+./MyApp -a 127.0.0.1 -p 1100 -r client -i 1 -L lib.so
+./MyServer
