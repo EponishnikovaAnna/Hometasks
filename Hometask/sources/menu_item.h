@@ -318,11 +318,10 @@ public:
     MatrixMultiplyMenuItem(DataPool<std::vector<int>>& intPool,
                             DataPool<std::vector<float>>& floatPool,
                             DataPool<std::vector<double>>& doublePool,
-                            const string& typeRef, 
-                            const AppSettings& settings)
+                            const string& typeRef)
         :MenuItem("matrix"),
         intPool(intPool), floatPool(floatPool), doublePool(doublePool),
-        vectorType(typeRef), appSettings(settings) {}
+        vectorType(typeRef) {}
 
     void action() override{
         if(vectorType == "int") {
@@ -361,6 +360,9 @@ public:
         }
     }
 private:
+    const int PORT = 1100;
+    const char* SERVER_IP = "127.0.0.1";
+
     template<typename T>
     void sendAndReceive(const std::vector<T>& vec)
     {
@@ -379,9 +381,9 @@ private:
 
         memset(&sockAddr, 0, sizeof(sockAddr));
         sockAddr.sin_family = PF_INET;
-        sockAddr.sin_port = htons(appSettings.getPort());
+        sockAddr.sin_port = htons(PORT);
 
-        res = inet_pton(PF_INET, appSettings.getIp().c_str(), &sockAddr.sin_addr);
+        res = inet_pton(PF_INET, SERVER_IP, &sockAddr.sin_addr);
         if (res < 0) {
             LOG_ERROR(std::string("MatrixMultiplyMenuItem::sendAndReceive: inet_pton failed (invalid address family): ") + 
                      strerror(errno));
@@ -390,7 +392,7 @@ private:
             return;
         } else if (res == 0) {
             LOG_ERROR("MatrixMultiplyMenuItem::sendAndReceive: inet_pton failed (invalid IP format): " + 
-                     appSettings.getIp());
+                     std::string(SERVER_IP));
             std::cout << "Ошибка: неверный формат IP-адреса\n";
             close(sock);
             return;
@@ -403,9 +405,9 @@ private:
 
         if (res == -1) {
             LOG_ERROR(std::string("MatrixMultiplyMenuItem::sendAndReceive: connect failed to ") + 
-                     appSettings.getIp() + ":" + std::to_string(appSettings.getPort()) + 
+                     std::string(SERVER_IP) + ":" + std::to_string(PORT) + 
                      " - " + strerror(errno));
-            std::cout << "Ошибка: не удалось подключиться к серверу\n";
+            std::cout << "Ошибка: не удалось подключиться к серверу. Убедитесь, что сервер запущен на порту " << PORT << "\n";
             close(sock);
             return;
         }
@@ -489,5 +491,4 @@ private:
     DataPool<std::vector<float>>& floatPool;
     DataPool<std::vector<double>>& doublePool;
     const string& vectorType;
-    const AppSettings& appSettings;
 };

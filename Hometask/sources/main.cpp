@@ -135,7 +135,7 @@ int main(int argc, char* argv[])
         menu.addItem(std::make_unique<ExitMenuItem>("exit", running));
         menu.addItem(std::make_unique<ExitMenuItem>("quit", running));
         menu.addItem(std::make_unique<NetworkAddressMenuItem>());
-        menu.addItem(std::make_unique<MatrixMultiplyMenuItem>(intPool, floatPool, doublePool, vectorType, settings));
+        menu.addItem(std::make_unique<MatrixMultiplyMenuItem>(intPool, floatPool, doublePool, vectorType));
 
         while(running)
         {
@@ -147,9 +147,9 @@ int main(int argc, char* argv[])
                 std::cout << "  connection - тест подключения\n";
                 std::cout << "  resource - тест ресурсов\n";
                 std::cout << "  network - ввести сетевой адрес\n";
-                std::cout << "  quit/exit - выход\n";
                 std::cout << "  matrix - умножить вектор на матрицу (требуется сервер)\n";
-                
+                std::cout << "  quit/exit - выход\n";
+                                
                 std::cout << "Введите команду: ";
                 
                 std::string cmd;
