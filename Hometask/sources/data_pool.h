@@ -1,11 +1,18 @@
 #pragma once
 #include <queue>
 #include <stdexcept>
+#include <vector>
+#include <type_traits>
 #include "loger.h"
 
 template<typename T>
 class DataPool
 {
+    static_assert(std::is_same_v<T, std::vector<int>> ||
+                  std::is_same_v<T, std::vector<float>> ||
+                  std::is_same_v<T, std::vector<double>>,
+                  "DataPool supports only vector<int>, vector<float>, vector<double>");
+    
 public:
     DataPool(size_t cap) : capacity(cap)
     {
@@ -13,7 +20,6 @@ public:
             LOG_ERROR("DataPool constructor: capacity is 0");
             throw std::invalid_argument("Размер DataPool должен быть больше 0");
         }
-            
     }
     
     void insert(const T& value)
@@ -26,7 +32,18 @@ public:
 
         pool.push(value);
 
-        bool isValid = value[3] != 0;
+        bool isValid = false;
+        try {
+            isValid = value.size() >= 4 && value.at(3) != typename T::value_type(0);
+            
+            if constexpr (std::is_floating_point_v<typename T::value_type>) {
+                isValid = isValid && std::abs(value.at(3)) > 
+                          std::numeric_limits<typename T::value_type>::epsilon();
+            }
+        } catch (const std::out_of_range&) {
+            isValid = false;
+        }
+        
         validationCache.push(isValid);
     }
 
@@ -36,7 +53,6 @@ public:
             LOG_ERROR("DataPool::first: pool is empty");
             throw std::runtime_error("DataPool пустой");
         }
-
         return pool.front();
     }
 
@@ -46,45 +62,31 @@ public:
             LOG_ERROR("DataPool::removeFirst: pool is empty");
             throw std::runtime_error("DataPool пустой");
         }
-
         pool.pop();
         validationCache.pop();
     }
 
-    bool isEmpty() const
-    {
-        return pool.empty();
-    }
-
-    size_t size() const
-    {
-        return pool.size();
-    }
-
+    bool isEmpty() const { return pool.empty(); }
+    size_t size() const { return pool.size(); }
+    
     bool isLastValid() const
     {
-        if(validationCache.empty())
-            return false;
-        return validationCache.back();
+        return !validationCache.empty() && validationCache.back();
     }
-
+    
     bool isFirstValid() const
     {
-        if(validationCache.empty())
-            return false;
-        return validationCache.front();
+        return !validationCache.empty() && validationCache.front();
     }
-
+    
     T get() const
     {
         if(pool.empty()){
             LOG_ERROR("DataPool::get: pool is empty");
             throw std::runtime_error("DataPool пустой");
         }
-        
         return pool.back();
     }
-
 
 private:
     std::queue<T> pool;

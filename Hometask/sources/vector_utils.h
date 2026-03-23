@@ -1,23 +1,56 @@
 #pragma once
 #include <iostream>
 #include <vector>
+#include <string>
 #include <limits>
+#include <algorithm>
+#include <cctype>
+
+inline std::string filterPrintable(const std::string& input)
+{
+    std::string result;
+    for(char c: input)
+    {
+        if(isprint(static_cast<unsigned char>(c)))
+        {
+            result += c;
+        }
+    }
+    return result;
+}
 
 template<typename T>
 bool tryReadValue(std::istream& in, T& value) {
-    if (in >> value)
+    std::streampos pos = in.tellg();
+    
+    if (in >> value) {
         return true;
+    }
+
     in.clear();
-    in.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    in.seekg(pos);
+
+    std::string dummy;
+    if (in >> dummy) {
+
+    }
+    
     return false;
 }
 
 template<typename T>
 bool validateWComponent(const std::vector<T>& vec) {
-    return vec[3] != 0;
-}
-
-inline void clearInputBuffer() {
-    std::cin.clear();
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    if (vec.size() < 4) {
+        return false;
+    }
+    try {
+        T w = vec.at(3);
+        if constexpr (std::is_floating_point_v<T>) {
+            return std::abs(w) > std::numeric_limits<T>::epsilon();
+        } else {
+            return w != T(0);
+        }
+    } catch (const std::out_of_range&) {
+        return false;
+    }
 }

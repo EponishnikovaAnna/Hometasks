@@ -14,17 +14,32 @@ bool ResourceTest::test(const vector<string>& params){
     }
 
     bool allExist = true;
+    int foundCount = 0;
+    int notFoundCount = 0;
 
+    cout << "\n=== Результаты проверки ресурсов ===\n";
+    
     for(const auto& path: params){
-        if(!fs::exists(path)){
-            LOG_ERROR("ConnectionTest::test: файл не найден");
-            cout << "Файл не найден: " << path << "\n";
+        if(fs::exists(path)) {
+            cout << "  Найден: " << path << "\n";
+            foundCount++;
+        } else {
+            LOG_ERROR("ResourceTest::test: файл не найден: " + path);
+            cout << "  Не найден: " << path << "\n";
             allExist = false;
+            notFoundCount++;
         }
     }
-
-    if(allExist)
+    
+    cout << "Всего файлов: " << params.size() << "\n";
+    cout << "Найдено: " << foundCount << "\n";
+    cout << "Не найдено: " << notFoundCount << "\n";
+    
+    if(allExist) {
         cout << "Все ресурсы существуют\n";
-
+    } else {
+        cout << "Некоторые ресурсы отсутствуют\n";
+    }
+    
     return allExist;
 }

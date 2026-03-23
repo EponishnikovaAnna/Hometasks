@@ -9,10 +9,46 @@
 #include <iostream>
 #include <vector>
 #include <errno.h>
+#include <pthread.h>
+#include <random>
 
 #include "loger.h"
+#include <nlohmann/json.hpp>
 
-const short port = 1100;
+using json = nlohmann::json;
+
+const int MAX_CLIENTS = 4;
+
+pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+int active_clients = 0;
+
+struct ClientData {
+    int clientSocket;
+    int clientId;
+};
+
+void printHelp() {
+    std::cout << "  Сервер для умножения 4D векторов на диагональные матрицы.\n";
+    std::cout << "  Принимает JSON-запросы от клиентов, обрабатывает векторы\n";
+    std::cout << "  различных типов (int, float, double) и возвращает результат.\n\n";
+    
+    std::cout << "ИСПОЛЬЗОВАНИЕ:\n";
+    std::cout << "  ./MyServer [ОПЦИИ]\n\n";
+    
+    std::cout << "ОПЦИИ:\n";
+    std::cout << "  -p <port>          Порт для прослушивания (1024-65535)\n";
+    std::cout << "  --help             Показать эту справку\n\n";
+    
+    std::cout << "ПАРАМЕТРЫ:\n";
+    std::cout << "  <port>             Номер порта (обязательный параметр)\n";
+    
+    std::cout << "ПРИМЕРЫ:\n";
+    std::cout << "  ./MyServer -p 1100              Запуск на порту 8080\n";
+    std::cout << "  ./MyServer --help               Показать справку\n\n";
+    std::cout << "  Максимум одновременных подключений: " << MAX_CLIENTS << "\n";
+    std::cout << "  Поддерживаемые типы векторов: int, float, double\n";
+    std::cout << "  Матрицы генерируются случайным образом\n";
+}
 
 template<typename T>
 class Matrix{
@@ -20,7 +56,6 @@ private:
     T data[4][4];
 public:
     Matrix(){
-        LOG_ERROR("Matrix created for type: " + std::string(typeid(T).name()));
         for(int i = 0; i < 4; i++){
             for(int j = 0; j<4; j++){
                 data[i][j] = (i==j) ? T(1): T(0);
@@ -31,20 +66,12 @@ public:
     void setValue(int row, int col, T value){
         if(row >= 0 && row < 4 && col >= 0 && col < 4){
             data[row][col] = value;
-            LOG_ERROR("Matrix::setValue: set data[" + std::to_string(row) + "][" + 
-                     std::to_string(col) + "] = " + std::to_string(value));
-        } else {
-            LOG_ERROR("Matrix::setValue: invalid indices [" + std::to_string(row) + "][" + 
-                     std::to_string(col) + "]");
         }
     }
 
     std::vector<T> multiply(const std::vector<T>& vec) const{
         if(vec.size() != 4){
-            LOG_ERROR("Matrix::multiply: vector size is " + std::to_string(vec.size()) + 
-                     ", expected 4");
-            std::cerr << "Ошибка: вектор должен быть размера 4\n";
-            return vec;
+            return std::vector<T>();
         }
 
         std::vector<T> result(4, T(0));
@@ -54,117 +81,194 @@ public:
             }
         }
         
-        LOG_ERROR("Matrix::multiply: multiplication completed");
         return result;
     }
 };
 
-template<typename T>
-bool processClient(int clientSocket)
+bool processClient(int clientSocket, int clientId)
 {
-    LOG_ERROR("processClient started for socket: " + std::to_string(clientSocket) + 
-              ", type: " + std::string(typeid(T).name()));
-    
-    int vecSize;
-    auto recvSize = recv(clientSocket, &vecSize, sizeof(vecSize), 0);
-    
-    if(recvSize <= 0) {
-        LOG_ERROR(std::string("processClient: failed to receive vector size, recvSize=" + 
-                 std::to_string(recvSize) + ", errno=" + std::to_string(errno) + 
-                 " (" + strerror(errno) + ")"));
-        std::cout << "Ошибка приема размера вектора\n";
-        return false;
-    }
-    
-    if(vecSize <= 0 || vecSize > 1000) {  // Защита от слишком больших векторов
-        LOG_ERROR("processClient: invalid vector size: " + std::to_string(vecSize));
-        std::cout << "Ошибка: некорректный размер вектора\n";
-        return false;
-    }
-    
-    std::cout << "Получен размер вектора: " << vecSize << std::endl;
-    LOG_ERROR("processClient: received vector size = " + std::to_string(vecSize));
-    
-    std::vector<T> receivedVec(vecSize);
-    int bytesToReceive = vecSize * sizeof(T);
-    int totalReceived = 0;
-    char* bufferPtr = reinterpret_cast<char*>(receivedVec.data());
-    
-    std::cout << "  " << "waiting for " << bytesToReceive << " bytes of data..." << std::endl;
-    LOG_ERROR("processClient: expecting " + std::to_string(bytesToReceive) + " bytes");
-    
-    while (totalReceived < bytesToReceive) {
-        auto getSize = recv(clientSocket, bufferPtr + totalReceived,
-                            bytesToReceive - totalReceived, 0);
+    try {
+        uint32_t jsonLength;
+        auto recvSize = recv(clientSocket, &jsonLength, sizeof(jsonLength), 0);
         
-        if (getSize <= 0) {
-            LOG_ERROR(std::string("processClient: failed to receive data, getSize=" + 
-                     std::to_string(getSize) + ", errno=" + std::to_string(errno) + 
-                     " (" + strerror(errno) + ")"));
-            std::cout << "  " << "Ошибка приема данных" << std::endl;
+        if(recvSize <= 0) {
             return false;
         }
         
-        totalReceived += getSize;
-        std::cout << "  " << "received " << totalReceived << "/" << bytesToReceive << " bytes" << std::endl;
-        LOG_ERROR("processClient: received " + std::to_string(totalReceived) + 
-                 "/" + std::to_string(bytesToReceive) + " bytes");
-    }
+        std::vector<char> jsonBuffer(jsonLength + 1, 0);
+        int totalReceived = 0;
+        while(totalReceived < static_cast<int>(jsonLength)) {
+            int getSize = recv(clientSocket, jsonBuffer.data() + totalReceived,
+                              jsonLength - totalReceived, 0);
+            if(getSize <= 0) return false;
+            totalReceived += getSize;
+        }
+        
+        std::string jsonStr(jsonBuffer.data());
+        json request = json::parse(jsonStr);
 
-    std::cout << "  " << "received vector: ";
-    for (int i = 0; i < vecSize; i++) {
-        std::cout << receivedVec[i];
-        if (i < vecSize - 1) std::cout << ", ";
-    }
-    std::cout << std::endl;
+        std::random_device rd;
+        std::mt19937 gen(rd());
 
-    LOG_ERROR("processClient: creating matrix for multiplication");
-    Matrix<T> matrix;
+        if(request["vector"].is_array() && !request["vector"].empty()) {
+            if(request["vector"][0].is_number_integer()) {
+                std::cout << "[Client " << clientId << "] Обнаружен тип: int" << std::endl;
+                std::vector<int> receivedVec = request["vector"].get<std::vector<int>>();
+                
+                if(receivedVec.size() != 4) {
+                    json errorResponse;
+                    errorResponse["error"] = "Vector size must be 4";
+                    std::string errorStr = errorResponse.dump();
+                    uint32_t errorLen = errorStr.length();
+                    send(clientSocket, &errorLen, sizeof(errorLen), 0);
+                    send(clientSocket, errorStr.c_str(), errorLen, 0);
+                    return false;
+                }
 
-    for (int i = 0; i < vecSize; i++) {
-        matrix.setValue(i, i, T(2));
-    }
+                Matrix<int> matrix;
+                std::uniform_int_distribution<int> dist(1, 100); 
+                for(int i = 0; i < 4; i++){
+                    matrix.setValue(i, i, dist(gen));
+                }
+                std::vector<int> resultVec = matrix.multiply(receivedVec);
+                
+                json response;
+                response["result"] = resultVec;
+                response["status"] = "success";
+                
+                std::string responseStr = response.dump();
+                uint32_t responseLength = responseStr.length();
+                send(clientSocket, &responseLength, sizeof(responseLength), 0);
+                send(clientSocket, responseStr.c_str(), responseLength, 0);
+                return true;
+                
+            } else if(request["vector"][0].is_number_float()) {
+                double val = request["vector"][0].get<double>();
+                float fval = static_cast<float>(val);
+                
+                if(static_cast<double>(fval) == val) {
+                    std::cout << "[Client " << clientId << "] Обнаружен тип: float" << std::endl;
+                    std::vector<float> receivedVec = request["vector"].get<std::vector<float>>();
+                    
+                    if(receivedVec.size() != 4) {
+                        json errorResponse;
+                        errorResponse["error"] = "Vector size must be 4";
+                        std::string errorStr = errorResponse.dump();
+                        uint32_t errorLen = errorStr.length();
+                        send(clientSocket, &errorLen, sizeof(errorLen), 0);
+                        send(clientSocket, errorStr.c_str(), errorLen, 0);
+                        return false;
+                    }
 
-    LOG_ERROR("processClient: performing multiplication");
-    std::vector<T> resultVec = matrix.multiply(receivedVec);
-    
-    std::cout << "  " << "processed vector: ";
-    for (int i = 0; i < resultVec.size(); i++) {  
-        std::cout << resultVec[i];                  
-        if (i < resultVec.size() - 1) std::cout << ", ";
-    }
-    std::cout << std::endl;
+                    Matrix<float> matrix;
+                    std::uniform_real_distribution<float> dist_f(0.0f, 1.0f);
+                    for(int i = 0; i < 4; i++){
+                        matrix.setValue(i, i, dist_f(gen));
+                    }
+                    std::vector<float> resultVec = matrix.multiply(receivedVec);
+                    
+                    json response;
+                    response["result"] = resultVec;
+                    response["status"] = "success";
+                    
+                    std::string responseStr = response.dump();
+                    uint32_t responseLength = responseStr.length();
+                    send(clientSocket, &responseLength, sizeof(responseLength), 0);
+                    send(clientSocket, responseStr.c_str(), responseLength, 0);
+                    return true;
+                } else {
+                    std::cout << "[Client " << clientId << "] Обнаружен тип: double" << std::endl;
+                    std::vector<double> receivedVec = request["vector"].get<std::vector<double>>();
+                    
+                    if(receivedVec.size() != 4) {
+                        json errorResponse;
+                        errorResponse["error"] = "Vector size must be 4";
+                        std::string errorStr = errorResponse.dump();
+                        uint32_t errorLen = errorStr.length();
+                        send(clientSocket, &errorLen, sizeof(errorLen), 0);
+                        send(clientSocket, errorStr.c_str(), errorLen, 0);
+                        return false;
+                    }
 
-    LOG_ERROR("processClient: sending result, size=" + std::to_string(resultVec.size()));
-
-    int newVecSize = resultVec.size();
-    auto sendSize = send(clientSocket, &newVecSize, sizeof(newVecSize), 0);
-    std::cout << "  " << "sent size:\t" << sendSize << " bytes" << std::endl;
-    
-    if(sendSize != sizeof(newVecSize)) {
-        LOG_ERROR("processClient: failed to send result size, sent=" + 
-                 std::to_string(sendSize) + ", errno=" + std::to_string(errno));
+                    Matrix<double> matrix;
+                    std::uniform_real_distribution<double> dist_d(0.0, 1.0);
+                    for(int i = 0; i < 4; i++){
+                        matrix.setValue(i, i, dist_d(gen));
+                    }
+                    std::vector<double> resultVec = matrix.multiply(receivedVec);
+                    
+                    json response;
+                    response["result"] = resultVec;
+                    response["status"] = "success";
+                    
+                    std::string responseStr = response.dump();
+                    uint32_t responseLength = responseStr.length();
+                    send(clientSocket, &responseLength, sizeof(responseLength), 0);
+                    send(clientSocket, responseStr.c_str(), responseLength, 0);
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+        
+    } catch(const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
         return false;
     }
-
-    std::cout << "  " << "sending " << resultVec.size() * sizeof(T) << " bytes of data..." << std::endl;  
-    auto sendData = send(clientSocket, resultVec.data(), resultVec.size() * sizeof(T), 0);  
-    std::cout << "  " << "sent data:\t" << sendData << " bytes" << std::endl;
-    
-    if(sendData != static_cast<ssize_t>(resultVec.size() * sizeof(T))) {
-        LOG_ERROR("processClient: failed to send result data, sent=" + 
-                 std::to_string(sendData) + ", expected=" + 
-                 std::to_string(resultVec.size() * sizeof(T)));
-        return false;
-    }
-    
-    LOG_ERROR("processClient: successfully completed for socket: " + std::to_string(clientSocket));
-    return true;
 }
 
-int main()
+void* handleClient(void* arg) {
+    ClientData* data = (ClientData*)arg;
+    int clientSocket = data->clientSocket;
+    int clientId = data->clientId;
+    
+    std::cout << "=== Поток для клиента " << clientId << " запущен ===" << std::endl;
+    
+    if(processClient(clientSocket, clientId)) {
+        std::cout << "[Client " << clientId << "] Обработка завершена успешно\n";
+    } else {
+        std::cout << "[Client " << clientId << "] Ошибка обработки\n";
+    }
+    
+    shutdown(clientSocket, SHUT_RDWR);
+    close(clientSocket);
+    
+    pthread_mutex_lock(&clients_mutex);
+    active_clients--;
+    std::cout << "Активных клиентов: " << active_clients << "/" << MAX_CLIENTS << std::endl;
+    pthread_mutex_unlock(&clients_mutex);
+    
+    delete data;
+    return nullptr;
+}
+
+int main(int argc, char* argv[])
 {
+    short port = 0;
+
+    for(int i = 1; i < argc; i++)
+    {
+        string flag = argv[i];
+
+        if(flag == "--help")
+        {
+            printHelp();
+            exit(0);
+        }
+        else if(flag == "-p" && (i+1) < argc)
+        {
+            port = atoi(argv[++i]);
+            
+            if(port <= 0 || port > 65535) {
+                LOG_ERROR("Неверный порт: " + std::to_string(port));
+                exit(0);
+            }
+        }
+    }
+
     LOG_ERROR("Server application started on port " + std::to_string(port));
+    std::cout << "Максимум одновременных подключений: " << MAX_CLIENTS << std::endl;
     
     struct sockaddr_in sockAddr;
     
@@ -212,8 +316,19 @@ int main()
     }
     std::cout << "  " << "server listen:\t" << result << std::endl;
     LOG_ERROR("Listen successful, waiting for connections...");
+    std::cout << "Ожидание подключений...\n" << std::endl;
+    
+    int clientId = 0;
     
     while(true) {  
+        pthread_mutex_lock(&clients_mutex);
+        if(active_clients >= MAX_CLIENTS) {
+            pthread_mutex_unlock(&clients_mutex);
+            usleep(1000000);
+            continue;
+        }
+        pthread_mutex_unlock(&clients_mutex);
+        
         int client = accept(sock, nullptr, nullptr);
         
         if (client < 0) {
@@ -221,21 +336,36 @@ int main()
             perror("Ошибка: принятия");
             continue;
         }
-        std::cout << "  " << "server accept:\tto " << client << std::endl;
-        LOG_ERROR("New client connected, socket: " + std::to_string(client));
         
-        if(processClient<int>(client)) {
-            std::cout << "Обработка завершена успешно\n";
-            LOG_ERROR("Client " + std::to_string(client) + " processed successfully");
+        pthread_mutex_lock(&clients_mutex);
+        active_clients++;
+        clientId++;
+        int currentClientId = clientId;
+        pthread_mutex_unlock(&clients_mutex);
+        
+        std::cout << "\n=== Новое подключение ===" << std::endl;
+        std::cout << "Клиент ID: " << currentClientId << std::endl;
+        std::cout << "Сокет: " << client << std::endl;
+        std::cout << "Активных клиентов: " << active_clients << "/" << MAX_CLIENTS << std::endl;
+        
+        ClientData* data = new ClientData;
+        data->clientSocket = client;
+        data->clientId = currentClientId;
+
+        pthread_t thread;
+        if(pthread_create(&thread, nullptr, handleClient, data) != 0) {
+            LOG_ERROR("Failed to create thread");
+            std::cerr << "Ошибка создания потока" << std::endl;
+            delete data;
+            close(client);
+            
+            pthread_mutex_lock(&clients_mutex);
+            active_clients--;
+            pthread_mutex_unlock(&clients_mutex);
         } else {
-            std::cout << "Ошибка обработки\n";
-            LOG_ERROR("Client " + std::to_string(client) + " processing failed");
+            pthread_detach(thread);
+            std::cout << "Поток для клиента " << currentClientId << " создан" << std::endl;
         }
-        
-        shutdown(client, SHUT_RDWR);
-        std::cout << "  " << "client connection closed" << std::endl;
-        close(client);
-        LOG_ERROR("Client " + std::to_string(client) + " connection closed");
     }
     
     close(sock);

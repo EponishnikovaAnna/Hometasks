@@ -1,10 +1,8 @@
 #pragma once
-#include "test_base.h"
+#include <vector>
+#include <string>
 
-using namespace std;
-
-class ResourceTest: public TestBase
-{
-public: 
-	bool test(const vector<string>& params) override;
+class ResourceTest {
+public:
+    bool test(const std::vector<std::string>& params);
 };

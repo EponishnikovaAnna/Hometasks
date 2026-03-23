@@ -7,7 +7,7 @@
 #include "app_settings.h"
 #include "menu.cpp"
 #include "menu_item.h"
-#include "data_pool.h"
+#include "data_pools.h"
 #include "connection_test.h"
 #include "resource_test.h"
 #include "loger.h"
@@ -29,11 +29,9 @@ bool tryReadValue(std::istream& in, T& value) {
 template<typename T>
 bool validateWComponent(const std::vector<T>& vec) {
     try {
-        return vec[3] != 0;
+        return vec.at(3) != 0;
     } catch (const std::out_of_range& e) {
-        LOG_ERROR(std::string("validateWComponent failed: ") + e.what() + 
-                  " - vector size: " + std::to_string(vec.size()));
-        std::cerr << "Ошибка: вектор должен содержать минимум 4 элемента\n";
+        LOG_ERROR("Vector size < 4");
         return false;
     }
 }
@@ -105,6 +103,8 @@ int main(int argc, char* argv[])
         
         AppSettings settings(argc, argv);
 
+        const ServerConfig& server = settings.getServerConfig();
+
         std::cout << "IP: " << settings.getIp() << "\n";
         std::cout << "Port: " << settings.getPort() << "\n";
         std::cout << "Role: " << settings.getRole() << "\n";
@@ -112,9 +112,7 @@ int main(int argc, char* argv[])
         std::cout << "Library: " << settings.getLibrary() << "\n";
         std::cout << "Имя пользователя: " << settings.getUsername() << "\n\n";
 
-        DataPool<std::vector<int>> intPool(3);
-        DataPool<std::vector<float>> floatPool(3);
-        DataPool<std::vector<double>> doublePool(3);
+        DataPools pools;
 
         ConnectionTest connectionTest;
         ResourceTest resourceTest;
@@ -127,7 +125,7 @@ int main(int argc, char* argv[])
 
         menu.addItem(std::make_unique<NameMenuItem>(programName));
         menu.addItem(std::make_unique<TypeMenuItem>(vectorType));
-        menu.addItem(std::make_unique<VectorMenuItem>(intPool, floatPool, doublePool, vectorType));
+        menu.addItem(std::make_unique<VectorMenuItem>(pools, vectorType));
 
         menu.addItem(std::make_unique<ConnectionTestMenuItem>(connectionTest, settings));
         
@@ -135,7 +133,7 @@ int main(int argc, char* argv[])
         menu.addItem(std::make_unique<ExitMenuItem>("exit", running));
         menu.addItem(std::make_unique<ExitMenuItem>("quit", running));
         menu.addItem(std::make_unique<NetworkAddressMenuItem>());
-        menu.addItem(std::make_unique<MatrixMultiplyMenuItem>(intPool, floatPool, doublePool, vectorType));
+        menu.addItem(std::make_unique<MatrixMultiplyMenuItem>(pools, vectorType, settings));
 
         while(running)
         {

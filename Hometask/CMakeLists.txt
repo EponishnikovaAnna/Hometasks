@@ -2,19 +2,75 @@ cmake_minimum_required(VERSION 3.14)
 project(MyApp)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
+
+if(ENABLE_ASAN)
+    message(STATUS "AddressSanitizer включен")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer -g -O1")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-optimize-sibling-calls")
+    
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-stack-protector")
+    endif()
+endif()
+
+# Google Test
+include(FetchContent)
+
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/refs/heads/main.zip
+)
+
+FetchContent_MakeAvailable(googletest)
+
+enable_testing()
+
+set(SOURCES
+    sources/app_settings.cpp
+    sources/connection_test.cpp
+    sources/resource_test.cpp
+    sources/network_address.cpp
+    sources/menu_item.cpp
+)
 
 add_executable(MyApp
     sources/main.cpp
-    sources/app_settings.cpp
-    sources/menu.cpp
-    sources/connection_test.cpp
-    sources/resource_test.cpp
-    sources/menu_item.h
-    sources/data_pool.h
-    sources/network_address.h
-    sources/loger.h
+    ${SOURCES}
 )
+
+target_link_libraries(MyApp pthread)
+target_include_directories(MyApp PRIVATE ${CMAKE_SOURCE_DIR}/sources)
 
 add_executable(MyServer
     sources/server.cpp
 )
+
+target_link_libraries(MyServer pthread)
+target_include_directories(MyServer PRIVATE ${CMAKE_SOURCE_DIR}/sources)
+
+add_executable(unit_tests 
+    tests/test.cpp
+    ${SOURCES}
+)
+
+target_link_libraries(unit_tests
+    gtest
+    gtest_main
+    pthread
+)
+
+target_include_directories(unit_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/sources
+    ${CMAKE_SOURCE_DIR}/tests
+)
+
+if(ENABLE_ASAN)
+    target_compile_options(unit_tests PRIVATE -fsanitize=address -g -fno-omit-frame-pointer)
+    target_link_options(unit_tests PRIVATE -fsanitize=address)
+endif()
+
+add_test(NAME AllTests COMMAND unit_tests)
