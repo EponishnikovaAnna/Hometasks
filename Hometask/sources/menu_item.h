@@ -148,58 +148,58 @@ void MatrixMultiplyMenuItem::sendAndReceive(const std::vector<T>& vec)
 
     json request;
     request["vector"] = vec;
-
     std::string jsonStr = request.dump();
-    uint32_t jsonLength = jsonStr.length();
-    
-    std::cout << "Отправляем JSON: " << jsonStr << std::endl;
-    
-    ssize_t sent = send(sock, &jsonLength, sizeof(jsonLength), 0);
-    if(sent != sizeof(jsonLength)){
-        LOG_ERROR("Failed to send JSON length");
-        std::cout << "Ошибка отправки длины\n";
+
+    uint32_t jsonLength = htonl(jsonStr.length());
+
+    std::vector<char> buffer(sizeof(jsonLength) + jsonStr.length());
+    memcpy(buffer.data(), &jsonLength, sizeof(jsonLength));
+    memcpy(buffer.data() + sizeof(jsonLength), jsonStr.c_str(), jsonStr.length());
+
+    ssize_t sent = send(sock, buffer.data(), buffer.size(), 0);
+    if (sent != static_cast<ssize_t>(buffer.size())) {
+        LOG_ERROR("Failed to send complete packet");
+        std::cout << "Ошибка: отправлено только " << sent 
+                  << " из " << buffer.size() << " байт\n";
         close(sock);
         return;
     }
 
-    sent = send(sock, jsonStr.c_str(), jsonLength, 0);
-    if (sent != static_cast<ssize_t>(jsonLength)) {
-        LOG_ERROR("Failed to send JSON data");
-        std::cout << "Ошибка отправки JSON\n";
-        close(sock);
-        return;
-    }
+    std::cout << "Данные отправлены, ждем ответ..." << std::endl;
 
-    std::cout << "JSON отправлен, ждем ответ..." << std::endl;
-
-    uint32_t responseLength;
-    ssize_t received = recv(sock, &responseLength, sizeof(responseLength), 0);
+    char recvBuffer[2048];
+    ssize_t received = recv(sock, recvBuffer, sizeof(recvBuffer), 0);
 
     if (received <= 0) {
-        LOG_ERROR("Failed to receive response length");
+        LOG_ERROR("Failed to receive response");
         std::cout << "Ошибка приема ответа от сервера\n";
         close(sock);
         return;
     }
     
-    std::cout << "Получена длина ответа: " << responseLength << std::endl;
-
-    std::vector<char> responseBuffer(responseLength + 1, 0);
-    int totalReceived = 0;
-
-    while(totalReceived < static_cast<int>(responseLength)){
-        int getSize = recv(sock, responseBuffer.data() + totalReceived, 
-                          responseLength - totalReceived, 0);
-        if(getSize <= 0){
-            LOG_ERROR("Failed to receive response data");
-            std::cout << "Ошибка приема данных\n";
-            close(sock);
-            return;
-        }
-        totalReceived += getSize;
+    if (received < sizeof(uint32_t)) {
+        LOG_ERROR("Response too short");
+        std::cout << "Ошибка: ответ слишком короткий\n";
+        close(sock);
+        return;
     }
 
-    std::string responseStr(responseBuffer.data());
+    uint32_t responseLength;
+    memcpy(&responseLength, recvBuffer, sizeof(responseLength));
+    responseLength = ntohl(responseLength);
+    
+    std::cout << "Получена длина ответа: " << responseLength << " байт" << std::endl;
+    
+    // Проверяем, что пришло достаточно данных
+    if (received < sizeof(uint32_t) + responseLength) {
+        LOG_ERROR("Incomplete response received");
+        std::cout << "Ошибка: получено " << received 
+                  << " байт, ожидалось " << sizeof(uint32_t) + responseLength << "\n";
+        close(sock);
+        return;
+    }
+
+    std::string responseStr(recvBuffer + sizeof(uint32_t), responseLength);
     
     try {
         json response = json::parse(responseStr);

@@ -88,23 +88,37 @@ public:
 bool processClient(int clientSocket, int clientId)
 {
     try {
-        uint32_t jsonLength;
-        auto recvSize = recv(clientSocket, &jsonLength, sizeof(jsonLength), 0);
+        char recvBuffer[2048];
+
+        ssize_t received = recv(clientSocket, recvBuffer, sizeof(recvBuffer), 0);
         
-        if(recvSize <= 0) {
+        if (received <= 0) {
+            LOG_ERROR("Failed to receive data from client");
             return false;
         }
-        
-        std::vector<char> jsonBuffer(jsonLength + 1, 0);
-        int totalReceived = 0;
-        while(totalReceived < static_cast<int>(jsonLength)) {
-            int getSize = recv(clientSocket, jsonBuffer.data() + totalReceived,
-                              jsonLength - totalReceived, 0);
-            if(getSize <= 0) return false;
-            totalReceived += getSize;
+
+        if (received < sizeof(uint32_t)) {
+            LOG_ERROR("Received packet too short");
+            return false;
         }
+
+        uint32_t jsonLength;
+        memcpy(&jsonLength, recvBuffer, sizeof(jsonLength));
+        jsonLength = ntohl(jsonLength);
         
-        std::string jsonStr(jsonBuffer.data());
+        std::cout << "[Client " << clientId << "] Получена длина JSON: " 
+                  << jsonLength << " байт" << std::endl;
+
+        if (received < sizeof(uint32_t) + jsonLength) {
+            LOG_ERROR("Incomplete JSON data received");
+            std::cout << "[Client " << clientId << "] Ожидалось " << jsonLength 
+                      << " байт, получено " << (received - sizeof(uint32_t)) << std::endl;
+            return false;
+        }
+
+        std::string jsonStr(recvBuffer + sizeof(uint32_t), jsonLength);
+        std::cout << "[Client " << clientId << "] Получен JSON: " << jsonStr << std::endl;
+        
         json request = json::parse(jsonStr);
 
         std::random_device rd;
@@ -119,9 +133,13 @@ bool processClient(int clientSocket, int clientId)
                     json errorResponse;
                     errorResponse["error"] = "Vector size must be 4";
                     std::string errorStr = errorResponse.dump();
-                    uint32_t errorLen = errorStr.length();
-                    send(clientSocket, &errorLen, sizeof(errorLen), 0);
-                    send(clientSocket, errorStr.c_str(), errorLen, 0);
+                    uint32_t errorLen = htonl(errorStr.length());
+
+                    std::vector<char> responseBuffer(sizeof(errorLen) + errorStr.length());
+                    memcpy(responseBuffer.data(), &errorLen, sizeof(errorLen));
+                    memcpy(responseBuffer.data() + sizeof(errorLen), errorStr.c_str(), errorStr.length());
+                    
+                    send(clientSocket, responseBuffer.data(), responseBuffer.size(), 0);
                     return false;
                 }
 
@@ -137,9 +155,13 @@ bool processClient(int clientSocket, int clientId)
                 response["status"] = "success";
                 
                 std::string responseStr = response.dump();
-                uint32_t responseLength = responseStr.length();
-                send(clientSocket, &responseLength, sizeof(responseLength), 0);
-                send(clientSocket, responseStr.c_str(), responseLength, 0);
+                uint32_t responseLength = htonl(responseStr.length());
+
+                std::vector<char> responseBuffer(sizeof(responseLength) + responseStr.length());
+                memcpy(responseBuffer.data(), &responseLength, sizeof(responseLength));
+                memcpy(responseBuffer.data() + sizeof(responseLength), responseStr.c_str(), responseStr.length());
+                
+                send(clientSocket, responseBuffer.data(), responseBuffer.size(), 0);
                 return true;
                 
             } else if(request["vector"][0].is_number_float()) {
@@ -154,9 +176,13 @@ bool processClient(int clientSocket, int clientId)
                         json errorResponse;
                         errorResponse["error"] = "Vector size must be 4";
                         std::string errorStr = errorResponse.dump();
-                        uint32_t errorLen = errorStr.length();
-                        send(clientSocket, &errorLen, sizeof(errorLen), 0);
-                        send(clientSocket, errorStr.c_str(), errorLen, 0);
+                        uint32_t errorLen = htonl(errorStr.length());
+                        
+                        std::vector<char> responseBuffer(sizeof(errorLen) + errorStr.length());
+                        memcpy(responseBuffer.data(), &errorLen, sizeof(errorLen));
+                        memcpy(responseBuffer.data() + sizeof(errorLen), errorStr.c_str(), errorStr.length());
+                        
+                        send(clientSocket, responseBuffer.data(), responseBuffer.size(), 0);
                         return false;
                     }
 
@@ -172,9 +198,13 @@ bool processClient(int clientSocket, int clientId)
                     response["status"] = "success";
                     
                     std::string responseStr = response.dump();
-                    uint32_t responseLength = responseStr.length();
-                    send(clientSocket, &responseLength, sizeof(responseLength), 0);
-                    send(clientSocket, responseStr.c_str(), responseLength, 0);
+                    uint32_t responseLength = htonl(responseStr.length());
+                    
+                    std::vector<char> responseBuffer(sizeof(responseLength) + responseStr.length());
+                    memcpy(responseBuffer.data(), &responseLength, sizeof(responseLength));
+                    memcpy(responseBuffer.data() + sizeof(responseLength), responseStr.c_str(), responseStr.length());
+                    
+                    send(clientSocket, responseBuffer.data(), responseBuffer.size(), 0);
                     return true;
                 } else {
                     std::cout << "[Client " << clientId << "] Обнаружен тип: double" << std::endl;
@@ -184,9 +214,13 @@ bool processClient(int clientSocket, int clientId)
                         json errorResponse;
                         errorResponse["error"] = "Vector size must be 4";
                         std::string errorStr = errorResponse.dump();
-                        uint32_t errorLen = errorStr.length();
-                        send(clientSocket, &errorLen, sizeof(errorLen), 0);
-                        send(clientSocket, errorStr.c_str(), errorLen, 0);
+                        uint32_t errorLen = htonl(errorStr.length());
+                        
+                        std::vector<char> responseBuffer(sizeof(errorLen) + errorStr.length());
+                        memcpy(responseBuffer.data(), &errorLen, sizeof(errorLen));
+                        memcpy(responseBuffer.data() + sizeof(errorLen), errorStr.c_str(), errorStr.length());
+                        
+                        send(clientSocket, responseBuffer.data(), responseBuffer.size(), 0);
                         return false;
                     }
 
@@ -202,9 +236,13 @@ bool processClient(int clientSocket, int clientId)
                     response["status"] = "success";
                     
                     std::string responseStr = response.dump();
-                    uint32_t responseLength = responseStr.length();
-                    send(clientSocket, &responseLength, sizeof(responseLength), 0);
-                    send(clientSocket, responseStr.c_str(), responseLength, 0);
+                    uint32_t responseLength = htonl(responseStr.length());
+                    
+                    std::vector<char> responseBuffer(sizeof(responseLength) + responseStr.length());
+                    memcpy(responseBuffer.data(), &responseLength, sizeof(responseLength));
+                    memcpy(responseBuffer.data() + sizeof(responseLength), responseStr.c_str(), responseStr.length());
+                    
+                    send(clientSocket, responseBuffer.data(), responseBuffer.size(), 0);
                     return true;
                 }
             }
@@ -213,7 +251,7 @@ bool processClient(int clientSocket, int clientId)
         return false;
         
     } catch(const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        std::cerr << "[Client " << clientId << "] Error: " << e.what() << std::endl;
         return false;
     }
 }
