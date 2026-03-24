@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <vector>
 #include <type_traits>
+#include <limits>
 #include "loger.h"
 
 template<typename T>
@@ -33,15 +34,15 @@ public:
         pool.push(value);
 
         bool isValid = false;
-        try {
-            isValid = value.size() >= 4 && value.at(3) != typename T::value_type(0);
+
+        if (value.size() >= 4) {
+            auto w = value[3];
             
             if constexpr (std::is_floating_point_v<typename T::value_type>) {
-                isValid = isValid && std::abs(value.at(3)) > 
-                          std::numeric_limits<typename T::value_type>::epsilon();
+                isValid = std::abs(w) > std::numeric_limits<typename T::value_type>::epsilon();
+            } else {
+                isValid = w != typename T::value_type(0);
             }
-        } catch (const std::out_of_range&) {
-            isValid = false;
         }
         
         validationCache.push(isValid);
