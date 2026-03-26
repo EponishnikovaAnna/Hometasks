@@ -1,8 +1,8 @@
 #pragma once
-#include "test_base.h"
+#include <vector>
+#include <string>
 
-class ConnectionTest: public TestBase
-{
-public: 
-	bool test(const vector<string>& params) override;
+class ConnectionTest {
+public:
+    bool test(const std::vector<std::string>& params);
 };

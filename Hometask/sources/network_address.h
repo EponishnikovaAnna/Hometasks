@@ -5,22 +5,17 @@
 #include <stdexcept>
 #include "loger.h"
 
-using namespace std;
-
-class NetworkAddress{
+class NetworkAddress {
 private:
-    string ip;
+    std::string ip;
     int port;
     
-    void validateIpPart(int part, const string& context);
-    void validatePort(int portNum);
-    
 public:
-    NetworkAddress(const string& address);
-    NetworkAddress(const vector<int>& parts);
+    NetworkAddress(const std::string& address);
+    NetworkAddress(const std::vector<int>& parts);
     NetworkAddress(unsigned int ipHex, unsigned short portHex);
     
     void print() const;
-    string getIp() const;
+    std::string getIp() const;
     int getPort() const;
 };
